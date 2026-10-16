@@ -13,6 +13,7 @@
  * during training), the detector falls back to comparing with the nearest samples.
  */
 const UNKNOWN = "__unknown__";
+const CROPS = [0.75, 0.42]; // centre squares the scanner checks, as a share of the picture's shorter side
 const FEATURE_SCALE = 10; // fingerprints are unit length; scaling them helps the head train quickly
 
 const Detector = {
@@ -45,6 +46,26 @@ const Detector = {
     this.classes[key].samples.push(Float32Array.from(this.embed(source)));
     this.headStale = true;
     return this.classes[key].samples.length;
+  },
+
+  /* A camera frame or photo is learned from every crop the scanner looks at,
+     so the AI knows each item both up close and from further away. */
+  addFrameSamples(key, label, itemId, source) {
+    let n = 0;
+    for (const fraction of CROPS) n = this.addSample(key, label, itemId, cropSquare(source, fraction));
+    return n;
+  },
+
+  /* Scanner: looks at the guide square and at a zoomed-in centre (for small or far
+     items like test tubes) and returns the most confident answer. */
+  predictFrame(source) {
+    if (!this.isTrained()) return null;
+    let best = null;
+    for (const fraction of CROPS) {
+      const p = this.predictEmbedding(this.embed(cropSquare(source, fraction)));
+      if (!best || (p.accepted && !best.accepted) || (p.accepted === best.accepted && p.confidence > best.confidence)) best = p;
+    }
+    return best;
   },
 
   clearClass(key) { delete this.classes[key]; this.headStale = true; },
@@ -264,17 +285,40 @@ const Camera = {
   async start(video) {
     this.stop();
     this.stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: { ideal: "environment" }, width: { ideal: 640 }, height: { ideal: 480 } },
+      // high resolution so the zoomed-in crop of a small item still has detail
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 960 } },
       audio: false,
     });
     video.srcObject = this.stream;
     await video.play();
+  },
+  /* Optical/digital zoom range if the phone camera supports it (most Android phones), else null. */
+  zoomRange() {
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    const caps = track && track.getCapabilities ? track.getCapabilities() : {};
+    return caps.zoom && caps.zoom.max > caps.zoom.min ? caps.zoom : null;
+  },
+  setZoom(value) {
+    const track = this.stream && this.stream.getVideoTracks()[0];
+    if (track) track.applyConstraints({ advanced: [{ zoom: value }] }).catch(() => {});
   },
   stop() {
     if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
     this.stream = null;
   },
 };
+
+/* Cuts a centred square (fraction of the shorter side) out of a video frame or image, at 224x224. */
+const cropCanvas = document.createElement("canvas");
+cropCanvas.width = cropCanvas.height = 224;
+function cropSquare(source, fraction) {
+  const w = source.videoWidth || source.naturalWidth || source.width;
+  const h = source.videoHeight || source.naturalHeight || source.height;
+  const side = Math.min(w, h) * fraction;
+  const ctx = cropCanvas.getContext("2d", { willReadFrequently: true });
+  ctx.drawImage(source, (w - side) / 2, (h - side) / 2, side, side, 0, 0, 224, 224);
+  return cropCanvas;
+}
 
 /* Load a photo chosen with <input type=file> into an <img> the model can read. */
 function fileToImage(file) {

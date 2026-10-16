@@ -1,10 +1,13 @@
 {
-  "name": "LabBorrow",
+  "name": "STARR LabBorrow",
   "short_name": "LabBorrow",
-  "description": "Scan laboratory materials to borrow and return them.",
+  "description": "Laboratory equipment borrowing system of the STARR Club, Aurelio Arago Memorial National High School.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f6f7f6",
-  "theme_color": "#0f766e",
-  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml" }]
+  "background_color": "#f4f6f5",
+  "theme_color": "#02403b",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
 }

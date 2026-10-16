@@ -113,11 +113,27 @@ function viewAuth(mode = "login") {
   state.tab = null;
   renderShell();
   const reg = mode === "register";
+  const icon = (d) => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
   view.innerHTML = `
-    <div class="card stack" style="max-width:420px;margin:24px auto">
+    <section class="intro">
+      <div class="logos">
+        <img src="school-logo.jpg" alt="Aurelio Arago Memorial National High School seal">
+        <img src="starr-logo.png" alt="STARR club logo">
+      </div>
+      <p class="school">Aurelio Arago Memorial National High School</p>
+      <p class="club">A STARR Club Project</p>
+      <h1>STARR LabBorrow</h1>
+      <p class="tagline">The laboratory equipment borrowing system of our school. Point your phone camera at an item and it is recorded for you.</p>
+      <ul class="features">
+        <li>${icon(ICONS.scan)}<span><b>Scan to borrow.</b> The AI recognises laboratory materials and records the borrow under your account automatically.</span></li>
+        <li>${icon('<path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/>')}<span><b>Scan to return.</b> Scan the same item again to return it, and keep track of what you still have.</span></li>
+        <li>${icon('<path d="M12 3 4 7v5c0 5 3.4 8.3 8 9 4.6-.7 8-4 8-9V7z"/><path d="m9 12 2 2 4-4"/>')}<span><b>Monitored by the lab admin.</b> Every borrow and return is logged with the student and time, and overdue items are flagged.</span></li>
+      </ul>
+    </section>
+    <div class="card stack" style="max-width:420px;margin:0 auto">
       <div>
         <h1>${reg ? "Create student account" : "Log in"}</h1>
-        <p class="sub">${reg ? "Students sign up here. Admin accounts are created by the school." : "Scan laboratory materials to borrow and return them."}</p>
+        <p class="sub">${reg ? "Students sign up here. Admin accounts are given by the laboratory in-charge." : "Use your LabBorrow student or admin account."}</p>
       </div>
       <div class="seg"><button data-m="login" class="${reg ? "" : "on"}">Log in</button><button data-m="register" class="${reg ? "on" : ""}">Sign up</button></div>
       <form id="authForm" class="stack">
@@ -183,14 +199,16 @@ function cameraBox(container, { onFrame }) {
   container.innerHTML = `
     <div class="cam">
       <video playsinline muted></video>
-      <div class="frame"></div>
+      <div class="frame"><div class="frame-small"></div></div>
       <div class="placeholder" id="camPh"></div>
       <div class="label" hidden><span id="camLabel"></span><span id="camConf"></span></div>
     </div>
     <div class="row" style="margin-top:10px">
       <button class="btn grow" id="camToggle">Start camera</button>
       <label class="btn grow">Use a photo<input type="file" accept="image/*" capture="environment" id="camFile" hidden></label>
-    </div>`;
+    </div>
+    <label class="zoom" id="camZoom" hidden>Zoom <input type="range" id="camZoomRange"></label>
+    <p class="hint" style="margin:8px 0 0">Small items like test tubes: hold them inside the small inner square, or use Zoom.</p>`;
   const video = $("video", container), box = $(".cam", container), ph = $("#camPh", container);
   const labelBar = $(".label", container), toggle = $("#camToggle", container);
   let timer = null, running = false, paused = false;
@@ -214,9 +232,15 @@ function cameraBox(container, { onFrame }) {
       await Camera.start(video);
       ph.textContent = "";
       running = true; toggle.textContent = "Stop camera";
+      const zoom = Camera.zoomRange(), zoomRow = $("#camZoom", container), range = $("#camZoomRange", container);
+      zoomRow.hidden = !zoom;
+      if (zoom) {
+        Object.assign(range, { min: zoom.min, max: Math.min(zoom.max, zoom.min * 5), step: zoom.step || 0.1, value: zoom.min });
+        range.oninput = () => Camera.setZoom(Number(range.value));
+      }
       timer = setInterval(() => {
         if (paused || video.readyState < 2) return;
-        const p = Detector.predict(video);
+        const p = Detector.predictFrame(video);
         showPrediction(p);
         onFrame(p);
       }, SCAN_INTERVAL);
@@ -227,6 +251,7 @@ function cameraBox(container, { onFrame }) {
   function stop() {
     clearInterval(timer); timer = null; running = false;
     Camera.stop(); video.srcObject = null; toggle.textContent = "Start camera";
+    $("#camZoom", container).hidden = true;
     labelBar.hidden = true; box.classList.remove("hit");
     ph.textContent = "Camera stopped";
   }
@@ -245,7 +270,7 @@ function cameraBox(container, { onFrame }) {
       box.querySelector("img.still")?.remove();
       img.className = "still";
       box.prepend(img);
-      const p = Detector.predict(img);
+      const p = Detector.predictFrame(img);
       showPrediction(p);
       onFrame(p, { photo: true, image: img });
     } catch (err) { toast(err.message); }
@@ -484,7 +509,7 @@ async function viewTrain() {
   view.innerHTML = `
     <h1>Train the AI</h1>
     <p class="sub">Pick an item, point the camera at it and <b>hold</b> the capture button while slowly turning the item.
-      Aim for 30+ samples per item from different angles, distances and lighting. Also train <b>Not a lab item</b>
+      Aim for 40+ samples per item (each capture saves a normal and a zoomed-in view) from different angles, distances and lighting. Include the item held far away too. Also train <b>Not a lab item</b>
       with hands, faces, phones, bags and the empty table so the app ignores non-lab objects.</p>
     <div class="card stack">
       <label class="field">Teaching item
@@ -528,7 +553,7 @@ async function viewTrain() {
     $("#counts").innerHTML = rows.map((r) => {
       const n = Detector.count(r.key);
       return `<li><div class="main"><div class="title">${esc(r.label)}</div></div>
-        <span class="pill ${n >= 30 ? "returned" : n ? "borrowed" : "neutral"}">${n} samples</span>
+        <span class="pill ${n >= 40 ? "returned" : n ? "borrowed" : "neutral"}">${n} samples</span>
         ${n ? `<button class="btn small danger" data-clear="${r.key}">Clear</button>` : ""}</li>`;
     }).join("");
     view.querySelectorAll("[data-clear]").forEach((b) => (b.onclick = () => {
@@ -544,7 +569,7 @@ async function viewTrain() {
   const capture = () => {
     if (cam.video.readyState < 2) return;
     const s = selected();
-    const n = Detector.addSample(s.key, s.label, s.itemId, cam.video);
+    const n = Detector.addFrameSamples(s.key, s.label, s.itemId, cam.video);
     state.modelDirty = true;
     hold.textContent = `Capturing… ${n}`;
   };
@@ -568,7 +593,7 @@ async function viewTrain() {
     e.target.value = "";
     for (const [i, f] of files.entries()) {
       status.textContent = `Adding photo ${i + 1} of ${files.length}…`;
-      Detector.addSample(s.key, s.label, s.itemId, await fileToImage(f));
+      Detector.addFrameSamples(s.key, s.label, s.itemId, await fileToImage(f));
     }
     state.modelDirty = true;
     status.textContent = `Added ${files.length} photo(s) to ${s.label}.`;
