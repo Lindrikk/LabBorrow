@@ -69,7 +69,13 @@ const TABS = {
 
 function renderShell() {
   const u = state.user;
-  $("#who").innerHTML = u ? `<b>${esc(u.full_name)}</b>${u.role === "admin" ? "Admin" : esc(u.student_no || "Student")}` : "";
+  $("#who").innerHTML = u ? `
+    <button class="who-btn" id="whoBtn" title="Account settings"><b>${esc(u.full_name)}</b>${u.role === "admin" ? "Admin" : esc(u.student_no || "Student")} · Account</button>
+    <button class="btn small" id="topLogout">Log out</button>` : "";
+  if (u) {
+    $("#whoBtn").onclick = () => go("account");
+    $("#topLogout").onclick = logout;
+  }
   const nav = $("#tabs");
   if (!u) { nav.hidden = true; return; }
   nav.hidden = false;
