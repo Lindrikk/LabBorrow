@@ -1,7 +1,7 @@
 /* LabBorrow front end: one page, views rendered into <main id="view">. */
 const $ = (sel, root = document) => root.querySelector(sel);
 const view = $("#view");
-const state = { user: null, items: [], tab: null, modelLoaded: false, modelDirty: false };
+const state = { user: null, items: [], tab: null, modelLoaded: false, modelDirty: false, starterAdded: false };
 let cleanup = null; // stops the camera / timers of the current view
 
 const STABLE_FRAMES = 4;   // same item this many frames in a row = detected
@@ -43,6 +43,7 @@ async function ensureModel(statusEl) {
   await Detector.load();
   const { model } = await api("/api/model");
   Detector.deserialize(model);
+  state.starterAdded = !!(model && model.starter_added);
   state.modelLoaded = true;
 }
 
@@ -493,6 +494,8 @@ async function viewTrain() {
       </div>
       <div class="hint" id="status"></div>
     </div>
+    <h2>Starter AI</h2>
+    <div class="card stack" id="starter"><div class="hint">Checking…</div></div>
     <h2>Samples per class</h2>
     <div class="card"><ul class="list" id="counts"></ul></div>
     <div class="row" style="margin-top:12px">
@@ -528,6 +531,7 @@ async function viewTrain() {
     }));
   }
   drawCounts();
+  drawStarterCard(() => go("train")); // re-render so new items appear in the list and dropdown
 
   let holdTimer = null;
   const hold = $("#hold");
@@ -567,14 +571,156 @@ async function viewTrain() {
 
   $("#save").onclick = async () => {
     const btn = $("#save");
-    btn.disabled = true; btn.textContent = "Saving…";
+    btn.disabled = true;
     try {
-      await api("/api/model", "POST", Detector.serialize());
-      state.modelDirty = false;
-      toast("AI model saved. Students will use it on their next scan.");
-    } catch (err) { toast(err.message); }
+      await trainAndSave((p) => (btn.textContent = `Training AI… ${pct(p)}`));
+      toast("AI model trained and saved. Students will use it on their next scan.");
+    } catch (err) { toast(err.message, 5000); }
     btn.disabled = false; btn.textContent = "Save AI model";
   };
+}
+
+async function trainAndSave(onProgress) {
+  await Detector.train({ onProgress });
+  await api("/api/model", "POST", { ...Detector.serialize(), starter_added: state.starterAdded });
+  state.modelDirty = false;
+}
+
+/* ---------------------------------------------------------------- admin: starter AI */
+/* The starter AI (static/starter_model.json) holds fingerprints of free example photos of
+   standard lab equipment, keyed by item name, so a new install recognises them out of the box. */
+const STARTER_CATEGORIES = {
+  "Beaker": "Glassware", "Erlenmeyer Flask": "Glassware", "Test Tube": "Glassware", "Graduated Cylinder": "Glassware",
+  "Volumetric Flask": "Glassware", "Round-bottom Flask": "Glassware", "Funnel": "Glassware", "Watch Glass": "Glassware",
+  "Bunsen Burner": "Heating", "Tripod Stand": "Heating", "Crucible Tongs": "Tools", "Test Tube Rack": "Tools",
+  "Spatula": "Tools", "Mortar and Pestle": "Tools", "Thermometer": "Measuring", "Pipette": "Measuring",
+  "Burette": "Measuring", "Dropper": "Measuring", "Petri Dish": "Biology", "Triple Beam Balance": "Measuring",
+  "Microscope": "Optics", "Magnifying Glass": "Optics", "Microscope Slide": "Optics",
+};
+
+async function drawStarterCard(onChange) {
+  const card = $("#starter");
+  const [starter, photos] = await Promise.all([
+    fetch("starter_model.json", { cache: "no-store" }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+    api("/api/admin/pretrain-images").then((d) => d.classes).catch(() => ({})),
+  ]);
+  const nPhotos = Object.values(photos).reduce((a, f) => a + f.length, 0);
+  const items = starter ? Object.keys(starter.classes).filter((k) => k !== UNKNOWN) : [];
+  card.innerHTML = `
+    ${starter ? `<div>Recognises <b>${items.length} standard lab items</b> out of the box, learned from free example photos.
+      ${starter.accuracy != null ? `Accuracy on test photos it never saw: <b>${pct(starter.accuracy)}</b>.` : ""}</div>
+      <div class="hint">Adding it creates any missing items (quantity 1, so set real quantities in Items) and keeps your own training.
+      Web photos look different from your lab, so still add 10–20 camera samples of your real items for best results.</div>
+      <button class="btn primary" id="addStarter" ${state.starterAdded ? "disabled" : ""}>${state.starterAdded ? "Starter AI added ✓" : "Add starter AI"}</button>`
+      : `<div class="hint">No starter AI yet.</div>`}
+    ${nPhotos ? `<button class="btn" id="buildStarter">Rebuild starter AI from ${nPhotos} downloaded photos</button>` : ""}
+    <div class="hint" id="starterStatus"></div>`;
+  const status = $("#starterStatus");
+  if ($("#addStarter")) $("#addStarter").onclick = async (e) => {
+    e.target.disabled = true;
+    try { await addStarter(starter, status); onChange(); toast("Starter AI added and saved"); drawStarterCard(onChange); }
+    catch (err) { status.textContent = err.message; e.target.disabled = false; }
+  };
+  if ($("#buildStarter")) $("#buildStarter").onclick = async (e) => {
+    e.target.disabled = true;
+    try { const r = await buildStarter(photos, status); toast(`Starter AI rebuilt (${pct(r.accuracy)} test accuracy)`); drawStarterCard(onChange); }
+    catch (err) { status.textContent = err.message; e.target.disabled = false; }
+  };
+}
+
+async function addStarter(starter, status) {
+  status.textContent = "Adding starter AI…";
+  await loadItems();
+  for (const [name, c] of Object.entries(starter.classes)) {
+    let key = UNKNOWN, itemId = null, label = "Not a lab item";
+    if (name !== UNKNOWN) {
+      const find = () => state.items.find((i) => i.name.toLowerCase() === name.toLowerCase());
+      if (!find()) state.items = (await api("/api/items", "POST", { name, category: c.category, quantity: 1 })).items;
+      const item = find();
+      key = String(item.id); itemId = item.id; label = item.name;
+    }
+    if (!Detector.classes[key]) Detector.classes[key] = { label, itemId, samples: [] };
+    Detector.classes[key].samples.push(...c.samples.map(decodeSample));
+  }
+  state.starterAdded = true;
+  await trainAndSave((p) => (status.textContent = `Training AI… ${pct(p)}`));
+  status.textContent = "";
+}
+
+/* Turns the downloaded photos into fingerprints, measures accuracy on held-out photos, saves starter_model.json.
+   Each photo is also learned mirrored, so the AI copes with items facing either way. */
+function mirrored(img) {
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext("2d");
+  x.translate(c.width, 0); x.scale(-1, 1); x.drawImage(img, 0, 0);
+  return c;
+}
+
+async function buildStarter(photos, status, { holdout = true } = {}) {
+  const total = Object.values(photos).reduce((a, f) => a + f.length, 0);
+  const emb = {}; // name -> [[original, mirrored], ...] one entry per photo
+  const seen = [];
+  let done = 0, dupes = 0;
+  for (const [name, files] of Object.entries(photos)) {
+    emb[name] = [];
+    for (const f of files) {
+      try {
+        const img = await urlToImage(`/pretrain/${encodeURIComponent(name)}/${encodeURIComponent(f)}`);
+        const e = Float32Array.from(Detector.embed(img));
+        // the same picture filed under two items would teach the AI nonsense: keep the first only
+        if (seen.some(([n, o]) => n !== name && dot(o, e) > 0.97)) { dupes++; continue; }
+        seen.push([name, e]);
+        emb[name].push([e, Float32Array.from(Detector.embed(mirrored(img)))]);
+      } catch { /* skip unreadable photo */ }
+      if (++done % 10 === 0) { status.textContent = `Learning photos… ${done}/${total}`; await yieldNow(); }
+    }
+  }
+  const saved = { classes: Detector.classes, head: Detector.head, stale: Detector.headStale };
+  const asClasses = (pick) => {
+    const out = {};
+    for (const [name, list] of Object.entries(emb)) {
+      const samples = list.filter((_, i) => pick(i)).flat();
+      if (samples.length) out[name] = { label: name, itemId: name, samples };
+    }
+    return out;
+  };
+  let accuracy = null, perClass = {}, testCount = 0;
+  try {
+    if (holdout) { // every 5th photo is kept aside to test the AI on photos it never saw
+      status.textContent = "Testing accuracy…";
+      Detector.classes = asClasses((i) => i % 5 !== 4);
+      await Detector.train();
+      let correct = 0;
+      for (const [name, list] of Object.entries(emb)) {
+        list.forEach(([e], i) => {
+          if (i % 5 !== 4) return;
+          const p = Detector.predictEmbedding(e);
+          const ok = name === UNKNOWN ? !p.accepted : p.accepted && p.key === name;
+          const pc = (perClass[name] ||= { n: 0, ok: 0, guesses: {} });
+          pc.n++; pc.ok += ok; correct += ok; testCount++;
+          if (!ok) { const g = p.accepted ? p.key : "rejected"; pc.guesses[g] = (pc.guesses[g] || 0) + 1; }
+        });
+      }
+      accuracy = correct / testCount;
+    }
+  } finally {
+    Detector.classes = saved.classes; Detector.head = saved.head; Detector.headStale = saved.stale;
+  }
+  const model = { version: 3, accuracy, test_photos: testCount, duplicates_removed: dupes, per_class: perClass, classes: {} };
+  for (const [name, c] of Object.entries(asClasses(() => true))) {
+    model.classes[name] = { category: STARTER_CATEGORIES[name] || "", samples: c.samples.map(encodeSample) };
+  }
+  status.textContent = "Saving starter AI…";
+  await api("/api/admin/starter-model", "POST", model);
+  status.textContent = "";
+  return model;
+}
+
+function dot(a, b) {
+  let s = 0;
+  for (let i = 0; i < a.length; i++) s += a[i] * b[i];
+  return s;
 }
 
 /* ---------------------------------------------------------------- admin: students */

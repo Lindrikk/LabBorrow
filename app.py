@@ -16,10 +16,12 @@ from flask import Flask, g, jsonify, request, send_from_directory, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+DATA_DIR = os.environ.get("LAB_DATA_DIR") or os.path.join(BASE_DIR, "data")
 DB_PATH = os.path.join(DATA_DIR, "labborrow.db")
 MODEL_PATH = os.path.join(DATA_DIR, "model.json")
 SECRET_PATH = os.path.join(DATA_DIR, "secret.key")
+PRETRAIN_DIR = os.path.join(BASE_DIR, "pretrain_images")  # filled by tools/fetch_pretrain_images.py
+STARTER_PATH = os.path.join(BASE_DIR, "static", "starter_model.json")
 
 DEFAULT_ADMIN_USER = os.environ.get("LAB_ADMIN_USER", "admin")
 DEFAULT_ADMIN_PASS = os.environ.get("LAB_ADMIN_PASS", "admin123")
@@ -300,7 +302,15 @@ def delete_item(item_id):
 def get_model():
     if not os.path.exists(MODEL_PATH):
         return jsonify(model=None)
-    return send_from_directory(DATA_DIR, "model.json", mimetype="application/json", max_age=0)
+    if g.user["role"] == "admin":
+        return send_from_directory(DATA_DIR, "model.json", mimetype="application/json", max_age=0)
+    # Students only need the trained classifier head, not every training sample (much smaller download).
+    with open(MODEL_PATH) as f:
+        model = json.load(f)["model"]
+    if model.get("head"):
+        for c in model["classes"].values():
+            c.pop("samples", None)
+    return jsonify(model=model)
 
 
 @app.post("/api/model")
@@ -313,6 +323,39 @@ def save_model():
     with open(MODEL_PATH, "w") as f:
         json.dump({"model": model}, f)
     return jsonify(ok=True, saved_at=model["saved_at"])
+
+
+@app.get("/api/admin/pretrain-images")
+@login_required("admin")
+def pretrain_images():
+    """Lists the downloaded starter photos, so the admin page can rebuild the starter AI from them."""
+    classes = {}
+    if os.path.isdir(PRETRAIN_DIR):
+        for name in sorted(os.listdir(PRETRAIN_DIR)):
+            folder = os.path.join(PRETRAIN_DIR, name)
+            if os.path.isdir(folder):
+                files = sorted(f for f in os.listdir(folder) if f.lower().endswith(".jpg"))
+                if files:
+                    classes[name] = files
+    return jsonify(classes=classes)
+
+
+@app.get("/pretrain/<path:path>")
+@login_required("admin")
+def pretrain_file(path):
+    return send_from_directory(PRETRAIN_DIR, path)
+
+
+@app.post("/api/admin/starter-model")
+@login_required("admin")
+def save_starter_model():
+    model = request.get_json(force=True)
+    if not isinstance(model, dict) or "classes" not in model:
+        return jsonify(error="Invalid model data."), 400
+    model["built_at"] = iso(now())
+    with open(STARTER_PATH, "w") as f:
+        json.dump(model, f)
+    return jsonify(ok=True)
 
 
 # ---------------------------------------------------------------- borrowing
