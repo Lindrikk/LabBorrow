@@ -1,7 +1,7 @@
 {
-  "name": "STARR LabBorrow",
+  "name": "STEM STARR LabBorrow",
   "short_name": "LabBorrow",
-  "description": "Laboratory equipment borrowing system of the STARR Club, Aurelio Arago Memorial National High School.",
+  "description": "Laboratory equipment borrowing system of STEM STARR, Aurelio Arago Memorial National High School.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#f4f6f5",

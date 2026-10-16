@@ -1,6 +1,6 @@
-# STARR LabBorrow
+# STEM STARR LabBorrow
 
-Laboratory equipment borrowing system of the **STARR Club, Aurelio Arago Memorial National High School**.
+Laboratory equipment borrowing system of **STEM STARR, Aurelio Arago Memorial National High School**.
 Developed by **Lindrik Agabas**.
 
 A phone app that uses the camera to recognise **laboratory materials only** and records them as

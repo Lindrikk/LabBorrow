@@ -118,11 +118,11 @@ function viewAuth(mode = "login") {
     <section class="intro">
       <div class="logos">
         <img src="school-logo.jpg" alt="Aurelio Arago Memorial National High School seal">
-        <img src="starr-logo.png" alt="STARR club logo">
+        <img src="starr-logo.png" alt="STEM STARR logo">
       </div>
       <p class="school">Aurelio Arago Memorial National High School</p>
-      <p class="club">A STARR Club Project</p>
-      <h1>STARR LabBorrow</h1>
+      <p class="club">A STEM STARR Project</p>
+      <h1>STEM STARR LabBorrow</h1>
       <p class="tagline">The laboratory equipment borrowing system of our school. Point your phone camera at an item and it is recorded for you.</p>
       <ul class="features">
         <li>${icon(ICONS.scan)}<span><b>Scan to borrow.</b> The AI recognises laboratory materials and records the borrow under your account automatically.</span></li>
