@@ -3,11 +3,25 @@
 Laboratory equipment borrowing system of **STEM STARR, Aurelio Arago Memorial National High School**.
 Developed by **Lindrik Agabas**.
 
+**Research title:** *Scan-to-Borrow: A Mobile AI System for Tracking Laboratory Equipment in a Senior High School*
+
 A phone app that uses the camera to recognise **laboratory materials only** and records them as
 borrowed by the logged-in student. Admins see who borrowed what, what is overdue, and what was returned.
 
-It is a web app (PWA). Students open it in the phone browser and can tap **Add to Home screen**,
-so it works like an installed app. One Python server holds the accounts and records for everyone.
+One Python server (on the lab laptop) holds the accounts and records for everyone. Students use it
+through the **Android app** (see below) or any phone browser.
+
+## Install the Android app
+
+On an Android phone, download and open:
+**https://github.com/Lindrikk/LabBorrow/releases/download/app-latest/LabBorrow.apk**
+
+Android will ask to allow installing apps from your browser ("unknown sources"); allow it once.
+The app finds the server's current link by itself (see *Public link* below), so students never
+have to type it. If the laptop is off, the app says so and offers Retry.
+
+The APK is built automatically by GitHub Actions (`.github/workflows/android.yml`) from the
+`android/` folder whenever that folder changes. You don't need Android Studio.
 
 ## Run it
 

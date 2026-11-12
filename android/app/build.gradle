@@ -1,0 +1,53 @@
+plugins {
+    id 'com.android.application'
+}
+
+// Build number from GitHub Actions, so each new APK installs as an update over the old one.
+def buildNumber = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int
+
+android {
+    namespace 'com.stemstarr.labborrow'
+    compileSdk 34
+
+    defaultConfig {
+        applicationId 'com.stemstarr.labborrow'
+        minSdk 24
+        targetSdk 34
+        versionCode buildNumber
+        versionName "1.0.${buildNumber}"
+    }
+
+    // The app's signing key is never stored in this public repo. The GitHub build decodes it
+    // from the repository secrets (see .github/workflows/android.yml) and passes its path here.
+    // With it, each new version installs over the old one; without it the build uses a
+    // temporary key and phones must uninstall the old app first.
+    def keystorePath = System.getenv('LABBORROW_KEYSTORE')
+    signingConfigs {
+        if (keystorePath) {
+            shared {
+                storeFile file(keystorePath)
+                storeType 'pkcs12'
+                storePassword System.getenv('LABBORROW_KEYSTORE_PASSWORD')
+                keyAlias 'labborrow'
+                keyPassword System.getenv('LABBORROW_KEYSTORE_PASSWORD')
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig keystorePath ? signingConfigs.shared : signingConfigs.debug
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    lint {
+        checkReleaseBuilds false
+        abortOnError false
+    }
+}

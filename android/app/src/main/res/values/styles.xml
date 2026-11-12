@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- STEM STARR teal status bar, matching the web app header -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:statusBarColor">#02403B</item>
+        <item name="android:navigationBarColor">#02403B</item>
+        <item name="android:colorPrimary">#02403B</item>
+        <item name="android:colorAccent">#02403B</item>
+        <item name="android:windowBackground">@android:color/white</item>
+    </style>
+</resources>
